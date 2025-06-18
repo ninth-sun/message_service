@@ -1,0 +1,48 @@
+server:
+  port: 8002
+bac:
+  auth:
+    # 认证过期时间(分钟)
+    expiration-time: 240
+    # 发行人
+    issuer: bac
+    # 随机50位字符串
+    sign-key: wL0iO9oB3kQ0xC7rJ1eJ9bT8bD2gW2dA1hC9yK2aY3vO1wM2dG
+  sync:
+    external:
+      error-notice:
+        mail-to: ''
+        middleware-system-cron: 0 0 0 * * ?
+        auth-center-cron: 0 0/30 * * * ?
+        oc-system-cron: 0 0/30 * * * ?
+# 认证中心配置信息
+authentication:
+  # 认证中心地址
+  auth-server: http://192.168.8.32:8080
+  auth-notification-server: http://192.168.8.32:80
+  # 客户端id
+  client-id: 2eo
+  # 客户端密钥
+  client-secret: MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAgbBWBbghr1pS4I2J8lW43nR5DxM0l2CnLd88mEegRXiJeXvo3nH7i9CqgKi0cFFHeVR3jmOcRlFXivlWcZnb21/YFCAUGiOkOSWDCw/j14pYgG7vt04hNEGlEuZNxSiu25DI85W6BxqelDcESW3Um0p+g53pcuBvYRpT+qJLwLhcuQ2VY3VMOrvAPXZVrmgwbj2f80efLI5QTJuUYBAGACvpLrhVz/Y9gODKfHwpH126ejE1kTlTa5YJg+eZnrALIc9FD9hEzGpAhe78lXuQ8dT6C12HHXF8H6Gp3LRmbEDWFBhX26qNkWphsMOV5W3rBaPBXpIDkiiOFfgxyGAnYQIDAQAB
+  # 重定向地址
+  redirect-url: http://localhost
+authorization-center:
+  url: http://120.92.70.222:8080
+  username:
+  password:
+#配置日志
+logging:
+  #此处存放日志的路径
+  config: classpath:logback-spring.xml
+  level:
+    root: info
+  file:
+    path: '/Users/wangtian/Desktop/Work/workspace/tsc_log'
+
+
+
+
+
+
+
+
