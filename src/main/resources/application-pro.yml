@@ -1,14 +1,16 @@
 server:
   port: 8004
+  max-http-request-header-size: 16KB
+
 spring:
   # 数据库源配置
   datasource:
     # 使用druid连接池
     type: com.alibaba.druid.pool.DruidDataSource
     driverClassName: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://120.131.9.79:3306/bac_database?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&allowMultiQueries=true&useSSL=false
-    username: osp_user
-    password: Aa123#@!
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&allowMultiQueries=true&useSSL=false
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
     # 数据库连接池配置
     druid:
       # 连接器启动时创建的初始连接数
@@ -20,31 +22,25 @@ spring:
       min-idle: 3
       # 配置间隔多久才进行一次检测，检测需要关闭的空闲连接，单位是毫秒
       time-between-eviction-runs-millis: 60000
-# 企微消息配置
-wechat:
-  url: https://qyapi.weixin.qq.com/cgi-bin
-  agent-id: 1000260
-  secret: i3t6P5Robmo9Y4D6Y9GmCFVO4yFUaot2a7RcVOB44BE
-  corp-id: wwf98151b909eb3240
 
 #配置日志
 logging:
   #此处存放日志的路径
   config: classpath:logback-spring.xml
   level:
-    root: info
+    root: ${LOG_LEVEL}
   file:
-    path: '/Users/wangtian/Desktop/Work/workspace/tsc_log'
+    path: ${LOG_PATH}
+
+# 企微消息配置
+wechat:
+  url: ${WECHAT_URL}
+  agent-id: ${WECHAT_AGENT_ID}
+  secret: ${WECHAT_SECRET}
+  corp-id: ${WECHAT_CORP_ID}
 
 # sceneDiy消息配置
 scene-diy:
-  url: https://tenon-cmdb-test.sensetime.com
-  api-key: 98005a06889511efa8c7fa163e2b2703
-  oa-url: http://newoa-test.sensetime.com
-  oa-password: http://newoa-test.sensetime.com
-
-
-
-
-
+  url: ${SCENE_DIY_URL}
+  api-key: ${SCENE_DIY_API_KEY}
 
