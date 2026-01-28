@@ -22,5 +22,13 @@ public class SceneDiyProperty {
 
     private String oaPassword;
 
+    private String token;
+
+    private String smcUrl;
+
+    private String smcAk;
+
+    private String smcSk;
+
 
 }

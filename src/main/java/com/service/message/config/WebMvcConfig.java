@@ -1,7 +1,9 @@
 package com.service.message.config;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
@@ -16,6 +18,9 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  */
 @Configuration
 public class WebMvcConfig implements WebMvcConfigurer {
+
+    @Autowired
+    private AuthInterceptor authInterceptor;
 
     /**
      * <p> @Method:addCorsMappings </p>
@@ -32,5 +37,14 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .allowedMethods("GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS")
                 .allowCredentials(false)
                 .maxAge(3600);
+    }
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(authInterceptor)
+                // 拦截所有路径
+                .addPathPatterns("/**")
+                // 排除接口（无需鉴权）
+                .excludePathPatterns("/message/send");
     }
 }

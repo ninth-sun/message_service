@@ -1,5 +1,7 @@
 package com.service.message.service;
 
+import java.util.List;
+
 /**
  * @Author: ninth-sun
  * @Date: 2025/6/18 15:56
@@ -8,5 +10,7 @@ package com.service.message.service;
 public interface MessageService {
 
     void send(String ticketId);
+
+    void sendCustomMessage(List<String> userAccounts, String msgtype, String content);
 
 }

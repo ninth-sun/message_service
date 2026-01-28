@@ -8,10 +8,13 @@ import com.service.message.property.WechatProperty;
 import com.service.message.service.MessageService;
 import com.service.message.utils.HttpUtil;
 import com.service.message.utils.StringUtil;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -20,6 +23,7 @@ import java.util.Map;
  * @Description: 消息服务接口实现类
  */
 @Service
+@Slf4j
 public class MessageServiceImpl implements MessageService {
 
     @Autowired
@@ -28,6 +32,10 @@ public class MessageServiceImpl implements MessageService {
     @Autowired
     private SceneDiyProperty sceneDiyProperty;
 
+    /**
+     * 根据工单id发送消息
+     * @param ticketId
+     */
     @Override
     public void send(String ticketId) {
         // 获取企微accessToken
@@ -39,15 +47,49 @@ public class MessageServiceImpl implements MessageService {
         String description = template.generateMessageByCode(
                 map.get("create_time"), map.get("sn"), map.get("current_step"), map.get("current_processor"));
         // 企微回调地址
-        String url = String.format("https://open.weixin.qq.com/connect/oauth2/authorize?appid=%s" +
-                        "&redirect_uri=https://tenon-scenediy.sensetime.com/tenant/api/v1/sso/wechat/callback" +
-                        "&response_type=code&scope=snsapi_privateinfo&state=%s&agentid=%s",
-                wechatProperty.getCorpId(), ticketId, wechatProperty.getAgentId());
+        String url = String.format("https://tenon-scenediy.sensetime.com/redirect.html?id=%s", ticketId);
         String content = String.format("{\"title\": \"%s\",\"description\": \"%s\",\"url\": \"%s\",\"btntxt\": \"点击处理\"}",
                 map.get("title"), description, url);
         // 发送消息卡片
         String requestBody = String.format("{\"touser\":\"%s\",\"msgtype\":\"textcard\",\"agentid\":%s,\"textcard\":%s}",
                 map.get("userIds"), wechatProperty.getAgentId(), content);
+        HttpUtil.doRequestPost(wechatProperty.getUrl() + "/message/send?access_token=" + accessToken, requestBody);
+    }
+
+    /**
+     * 自定义发送消息
+     * @param userAccounts
+     * @param msgtype
+     * @param content
+     */
+    @Override
+    public void sendCustomMessage(List<String> userAccounts, String msgtype, String content) {
+        // 获取企微accessToken
+        String accessToken = getAccessToken();
+
+        // 发送用户
+        String touser = "";
+        if (CollectionUtils.isNotEmpty(userAccounts)) {
+            StringBuffer sb = new StringBuffer();
+            for (String account : userAccounts) {
+                // 根据用户账号获取用户邮箱
+                String emailByAccount = getUserEmailByAccount(account);
+                if (StringUtil.isNotEmpty(emailByAccount)) {
+                    // 根据用户邮箱获取用户企微id
+                    String userId = getUserIdByEmail(emailByAccount, accessToken);
+                    if (StringUtil.isNotEmpty(userId)) {
+                        sb.append(userId).append("|");
+                    }
+                }
+            }
+            if (sb.length() > 0) touser = sb.substring(0, sb.length() - 1);
+        }
+
+
+        // 发送消息
+        String requestBody = String.format("{\"touser\":\"%s\",\"msgtype\":\"%s\",\"agentid\":%s,\"%s\":%s}",
+                touser, msgtype, wechatProperty.getAgentId(), msgtype, content);
+
         HttpUtil.doRequestPost(wechatProperty.getUrl() + "/message/send?access_token=" + accessToken, requestBody);
     }
 

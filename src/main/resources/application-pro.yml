@@ -43,4 +43,10 @@ wechat:
 scene-diy:
   url: ${SCENE_DIY_URL}
   api-key: ${SCENE_DIY_API_KEY}
+  oa-url: ${SCENE_DIY_OA_URL}
+  oa-password: ${SCENE_DIY_OA_PASSWORD}
+  token: ${SCENE_DIY_TOKEN}
+  smc-url: ${SCENE_DIY_SMC_URL}
+  smc-ak: ${SCENE_DIY_SMC_AK}
+  smc-sk: ${SCENE_DIY_SMC_SK}
 

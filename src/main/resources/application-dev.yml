@@ -32,16 +32,20 @@ logging:
   #此处存放日志的路径
   config: classpath:logback-spring.xml
   level:
-    root: info
+    root: debug
   file:
-    path: '/Users/wangtian/Desktop/Work/workspace/tsc_log'
+    path: '/Users/wangtian/Desktop/Work/workspace/message_log'
 
 # sceneDiy消息配置
 scene-diy:
   url: https://tenon-cmdb-test.sensetime.com
-  api-key: 98005a06889511efa8c7fa163e2b2703
+  api-key: 84a4ef7499eb43c2862cf3ec35d6eb2e5e2e
   oa-url: http://newoa-test.sensetime.com
-  oa-password: http://newoa-test.sensetime.com
+  oa-password: uAx1uWX8ulfw
+  token: 098f6bcd4621d373cade4e832627b4f6
+  smc-url: https://tenon-cmdb-api-test.sensetime.com
+  smc-ak: 00000000000000183819304608989259
+  smc-sk: 0000000000000018381930460898926030460898
 
 
 
