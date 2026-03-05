@@ -22,6 +22,14 @@ spring:
       min-idle: 3
       # 配置间隔多久才进行一次检测，检测需要关闭的空闲连接，单位是毫秒
       time-between-eviction-runs-millis: 60000
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD}
+      database: ${REDIS_DATABASE}
+      timeout: 3000
+      connectTimeout: 5000
 
 #配置日志
 logging:
@@ -49,4 +57,6 @@ scene-diy:
   smc-url: ${SCENE_DIY_SMC_URL}
   smc-ak: ${SCENE_DIY_SMC_AK}
   smc-sk: ${SCENE_DIY_SMC_SK}
+  batch-service-id: ${SCENE_DIY_SERVICE_ID}
+  env: ${SCENE_DIY_ENV}
 

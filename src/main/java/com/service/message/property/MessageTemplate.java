@@ -15,10 +15,24 @@ public enum MessageTemplate {
     COMMON_TEMPLATE("COMMON_TEMPLATE", "【请关注】SceneDIY工单已经分派给您，请审批。"),
 
     /**
-     * SceneDIY消息模板
+     * 处理中状态消息模板
      */
-    SCENE_DIY("SCENE_DIY", "【请关注】SceneDIY工单已经分派给您，请审批。\n提单时间：%s\n单号：%s\n当前环节：%s\n当前处理人：%s");
+    RUNNING("RUNNING", "【请关注】SceneDIY工单已经分派给您，请审批。\n提单时间：%s\n单号：%s\n当前环节：%s\n服务名称：%s\n当前处理人：%s"),
 
+    /**
+     * 挂起状态消息模板
+     */
+    SUSPEND("SUSPEND", "【请关注】SceneDIY工单已挂起。\n提单时间：%s\n单号：%s\n当前处理人：%s"),
+
+    /**
+     * 撤单状态消息模板
+     */
+    WITHDRAW("WITHDRAW", "【请关注】SceneDIY工单已撤单。\n提单时间：%s\n单号：%s\n当前处理人：%s"),
+
+    /**
+     * 拒绝状态消息模板
+     */
+    TERMINATION("TERMINATION", "【请关注】SceneDIY工单已经被终止。\n提单时间：%s\n单号：%s\n当前处理人：%s");
 
     private final String code;
 

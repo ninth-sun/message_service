@@ -30,5 +30,7 @@ public class SceneDiyProperty {
 
     private String smcSk;
 
+//    private String batchServiceId;
 
+    private String env;
 }

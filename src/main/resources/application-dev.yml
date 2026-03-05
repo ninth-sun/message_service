@@ -20,6 +20,14 @@ spring:
       min-idle: 3
       # 配置间隔多久才进行一次检测，检测需要关闭的空闲连接，单位是毫秒
       time-between-eviction-runs-millis: 60000
+  data:
+    redis:
+      host: 120.92.70.222
+      port: 6379
+      password: dm_energy^#re(*p
+      database: 6
+      timeout: 3000
+      connectTimeout: 5000
 # 企微消息配置
 wechat:
   url: https://qyapi.weixin.qq.com/cgi-bin
@@ -46,6 +54,8 @@ scene-diy:
   smc-url: https://tenon-cmdb-api-test.sensetime.com
   smc-ak: 00000000000000183819304608989259
   smc-sk: 0000000000000018381930460898926030460898
+  batch-service-id: 16-189
+  env: test
 
 
 
