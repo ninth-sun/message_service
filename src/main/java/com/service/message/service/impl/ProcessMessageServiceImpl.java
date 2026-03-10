@@ -14,6 +14,7 @@ import com.service.message.utils.SmcUtil;
 import com.service.message.utils.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -69,6 +70,7 @@ public class ProcessMessageServiceImpl implements ProcessMessageService {
     }
 
     @Override
+    @Async
     public String generateCheckReceiveProcess(String number) {
         String oaToken = getOaToken();
         String params = String.format("workFlowNumber=%s", number);
@@ -106,6 +108,7 @@ public class ProcessMessageServiceImpl implements ProcessMessageService {
     }
 
     @Override
+    @Async
     public void generateBuyRequestProcess(String number) {
         String oaToken = getOaToken();
         String params = String.format("prSingleNumber=%s", number);
@@ -118,34 +121,49 @@ public class ProcessMessageServiceImpl implements ProcessMessageService {
             JSONObject jsonObject = JSON.parseObject(requestGet);
             JSONArray data = jsonObject.getJSONArray("data");
             if (CollectionUtils.isNotEmpty(data) && 2000 == jsonObject.getInteger("statusCode")) {
+
+                Map<String, List<JSONObject>> poGroupMap = new HashMap<>();
                 for (Object o : data) {
                     JSONObject dataObject = (JSONObject) o;
-                    // 采购bp
-                    String user = dataObject.getString("purchaseBP");
-                    // pr单号
-                    String prSingleNumber = dataObject.getString("prSingleNumber");
-                    // po单号
                     String poNumber = dataObject.getString("poNumber");
-                    // 产品需求名称
-                    String productRequirementsName = dataObject.getString("productRequirementsName");
-                    // 厂商
-                    String deliveryManufacturer = dataObject.getString("deliveryManufacturer");
-                    // 规格型号
-                    String specificationsAndModels = dataObject.getString("specificationsAndModels");
-                    // 下单数量
-                    Integer orderQuantity = dataObject.getInteger("orderQuantity");
-                    // po行数据
-                    JSONArray poItemDetails = dataObject.getJSONArray("poItemDetails");
-                    if (CollectionUtils.isNotEmpty(poItemDetails)) {
-                        for (Object poItemDetail : poItemDetails) {
-                            JSONObject itemDetail = (JSONObject) poItemDetail;
+                    // 不存在则创建集合
+                    poGroupMap.computeIfAbsent(poNumber, k -> new ArrayList<>());
+                    poGroupMap.get(poNumber).add(dataObject);
+                }
+
+                // 遍历分组后的PO单（一个PO号仅执行1次接口请求）
+                for (Map.Entry<String, List<JSONObject>> entry : poGroupMap.entrySet()) {
+                    String poNumber = entry.getKey();
+                    List<JSONObject> poLineList = entry.getValue();
+                    // 取第一个数据的公共字段（user/pr单号等，同一个PO号一致）
+                    JSONObject firstData = poLineList.get(0);
+                    String user = firstData.getString("purchaseBP");
+                    String prSingleNumber = firstData.getString("prSingleNumber");
+
+                    // 存放当前PO号的所有行数据
+                    List<Map<String, Object>> arrivalPlanList = new ArrayList<>();
+
+                    // 遍历当前PO的所有行
+                    for (JSONObject dataObject : poLineList) {
+                        // 产品需求名称
+                        String productRequirementsName = dataObject.getString("productRequirementsName");
+                        // 厂商
+                        String deliveryManufacturer = dataObject.getString("deliveryManufacturer");
+                        // 规格型号
+                        String specificationsAndModels = dataObject.getString("specificationsAndModels");
+                        // 下单数量
+                        Integer orderQuantity = dataObject.getInteger("orderQuantity");
+                        // po行数据（只有1个对象，直接取第一个）
+                        JSONArray poItemDetails = dataObject.getJSONArray("poItemDetails");
+                        if (CollectionUtils.isNotEmpty(poItemDetails)) {
+                            JSONObject itemDetail = poItemDetails.getJSONObject(0);
                             // 资产编号集合
                             JSONArray assetObject = itemDetail.getJSONArray("assetObject");
                             // 编号
                             String poLine = itemDetail.getString("poItem");
                             String name = String.format("%s-%s-P1", poNumber, poLine);
 
-                            // 构建arrival_plan单个对象（用Map替代实体类）
+                            // 构建arrival_plan单个对象
                             Map<String, Object> arrivalPlanMap = new HashMap<>();
                             arrivalPlanMap.put("name", name);
                             arrivalPlanMap.put("pr_no", prSingleNumber);
@@ -161,32 +179,37 @@ public class ProcessMessageServiceImpl implements ProcessMessageService {
                             arrivalPlanMap.put("asset_code_list", assetObject);
                             arrivalPlanMap.put("asset_count", CollectionUtils.isEmpty(assetObject) ? 0 : assetObject.size());
 
-                            // 3. 构建field_dict和外层Map
-                            Map<String, Object> fieldDict = new HashMap<>();
-                            fieldDict.put("users", List.of(user));
-                            fieldDict.put("arrival_plan", List.of(arrivalPlanMap));
-                            fieldDict.put("need_asset_management", "yes");
-
-                            Map<String, Object> requestBodyMap = new HashMap<>();
-                            requestBodyMap.put("catalog_id", "32");
-                            requestBodyMap.put("service_id", "112");
-                            requestBodyMap.put("field_dict", fieldDict);
-
-                            // 4. 序列化JSON
-                            String requestBody = JSON.toJSONString(requestBodyMap);
-
-                            // 根据采购需求申请数据创建diy的流程
-                            TreeMap<String, String> diyHeaderMap = new TreeMap();
-                            diyHeaderMap.put("apikey", sceneDiyProperty.getApiKey());
-                            SmcUtil.smcSendPost(sceneDiyProperty.getSmcUrl() + "/scenediy/open/ticket/ticket/create_ticket_and_auto_proceed",
-                                    sceneDiyProperty.getSmcAk(), sceneDiyProperty.getSmcSk(), diyHeaderMap, requestBody);
+                            // 添加到当前PO的行集合
+                            arrivalPlanList.add(arrivalPlanMap);
                         }
+                    }
+
+                    // 统一发送请求（一个PO号仅1次）
+                    if (CollectionUtils.isNotEmpty(arrivalPlanList)) {
+                        // 构建field_dict和外层Map
+                        Map<String, Object> fieldDict = new HashMap<>();
+                        fieldDict.put("users", List.of(user));
+                        fieldDict.put("arrival_plan", arrivalPlanList);
+                        // 需要资产管理节点参数
+                        fieldDict.put("need_asset_management", "yes");
+
+                        Map<String, Object> requestBodyMap = new HashMap<>();
+                        requestBodyMap.put("catalog_id", "32");
+                        requestBodyMap.put("service_id", "112");
+                        requestBodyMap.put("field_dict", fieldDict);
+
+                        // 序列化JSON
+                        String requestBody = JSON.toJSONString(requestBodyMap);
+
+                        // 根据采购需求申请数据创建diy的流程
+                        TreeMap<String, String> diyHeaderMap = new TreeMap();
+                        diyHeaderMap.put("apikey", sceneDiyProperty.getApiKey());
+                        SmcUtil.smcSendPost(sceneDiyProperty.getSmcUrl() + "/scenediy/open/ticket/ticket/create_ticket_and_auto_proceed",
+                                sceneDiyProperty.getSmcAk(), sceneDiyProperty.getSmcSk(), diyHeaderMap, requestBody);
                     }
                 }
             }
         }
-
-
     }
 
     @Override
@@ -370,14 +393,14 @@ public class ProcessMessageServiceImpl implements ProcessMessageService {
         assetPurposeSet.addAll(consumablesReserveMap.keySet());
 
 
-        JSONObject jsonObject3 = JSON.parseObject("{\"totalRecords\":2,\"dataList\":[{\"id\":\"693d10cac74f7c0c3f420af3\",\"classCode\":\"physical_assets\",\"name\":\"test202512131504s2\",\"sn\":\"test202512131504s2\",\"Manufacturer\":{\"name\":\"昆仑（KunLun）\",\"id\":\"68f6ee1d5de59e40f5b91bca\"},\"ManufactModel\":{\"name\":\"G8600\",\"id\":\"68f6ee655de59e40f5b91bcd\"},\"main_device_type\":\"securityDev\",\"host_type\":\"910B GPU Server(8462Y+)\",\"asset_status\":\"reserved\",\"asset_category\":\"CateIAssets\",\"ownership_entity\":\"st_asset\",\"reserv_borrow_expiry_date\":\"2025-12-18 15:14:55\",\"reserve_ref\":{\"name\":\"金山云/设备\",\"id\":\"6911aa88c898587dadb86977\"},\"reserved_user\":[{\"uid\":\"e10adc3949ba59abbe56e057f20f88dd\",\"name\":\"admin\",\"account\":\"admin\"}]},{\"id\":\"693d107dc74f7c0c3f41e1c0\",\"classCode\":\"physical_assets\",\"name\":\"test202512131504s1\",\"sn\":\"test202512131504s1\",\"Manufacturer\":{\"name\":\"昆仑（KunLun）\",\"id\":\"68f6ee1d5de59e40f5b91bca\"},\"ManufactModel\":{\"name\":\"G8600\",\"id\":\"68f6ee655de59e40f5b91bcd\"},\"main_device_type\":\"securityDev\",\"host_type\":\"910B GPU Server(8462Y+)\",\"asset_status\":\"reserved\",\"asset_category\":\"CateIAssets\",\"ownership_entity\":\"st_asset\",\"reserved_user\":[{\"uid\":\"e10adc3949ba59abbe56e057f20f88dd\",\"name\":\"admin\",\"account\":\"admin\"}],\"reserv_borrow_expiry_date\":\"2025-12-18 15:14:55\",\"reserve_ref\":{\"name\":\"金山云/设备\",\"id\":\"6911aa88c898587dadb86977\"}}]}" );
+        JSONObject jsonObject3 = JSON.parseObject("{\"totalRecords\":2,\"dataList\":[{\"id\":\"693d10cac74f7c0c3f420af3\",\"classCode\":\"physical_assets\",\"name\":\"test202512131504s2\",\"sn\":\"test202512131504s2\",\"Manufacturer\":{\"name\":\"昆仑（KunLun）\",\"id\":\"68f6ee1d5de59e40f5b91bca\"},\"ManufactModel\":{\"name\":\"G8600\",\"id\":\"68f6ee655de59e40f5b91bcd\"},\"main_device_type\":\"securityDev\",\"host_type\":\"910B GPU Server(8462Y+)\",\"asset_status\":\"reserved\",\"asset_category\":\"CateIAssets\",\"ownership_entity\":\"st_asset\",\"reserv_borrow_expiry_date\":\"2025-12-18 15:14:55\",\"reserve_ref\":{\"name\":\"金山云/设备\",\"id\":\"6911aa88c898587dadb86977\"},\"reserved_user\":[{\"uid\":\"e10adc3949ba59abbe56e057f20f88dd\",\"name\":\"admin\",\"account\":\"admin\"}]},{\"id\":\"693d107dc74f7c0c3f41e1c0\",\"classCode\":\"physical_assets\",\"name\":\"test202512131504s1\",\"sn\":\"test202512131504s1\",\"Manufacturer\":{\"name\":\"昆仑（KunLun）\",\"id\":\"68f6ee1d5de59e40f5b91bca\"},\"ManufactModel\":{\"name\":\"G8600\",\"id\":\"68f6ee655de59e40f5b91bcd\"},\"main_device_type\":\"securityDev\",\"host_type\":\"910B GPU Server(8462Y+)\",\"asset_status\":\"reserved\",\"asset_category\":\"CateIAssets\",\"ownership_entity\":\"st_asset\",\"reserved_user\":[{\"uid\":\"e10adc3949ba59abbe56e057f20f88dd\",\"name\":\"admin\",\"account\":\"admin\"}],\"reserv_borrow_expiry_date\":\"2025-12-18 15:14:55\",\"reserve_ref\":{\"name\":\"金山云/设备\",\"id\":\"6911aa88c898587dadb86977\"}}]}");
         JSONArray dataArray3 = jsonObject3.getJSONArray("dataList");
         List<PhysicalAsset> assetReserveList2 = JSON.parseArray(dataArray3.toJSONString(), PhysicalAsset.class);
         Map<String, List<PhysicalAsset>> physicalAssetMap = assetReserveList2.stream().filter(asset -> asset.getReserve_ref() != null)
                 .collect(Collectors.groupingBy(asset -> asset.getReserve_ref().getName(), Collectors.toList()));
 
 
-        JSONObject jsonObject4 = JSON.parseObject("{\"totalRecords\":2,\"dataList\":[{\"id\":\"693d1161c74f7c0c3f420b20\",\"classCode\":\"accessory_asset\",\"name\":\"test12131508p2\",\"sn\":\"test12131508p2\",\"Manufacturer\":{\"name\":\"新华三（H3C）\",\"id\":\"68d3cd33f43b265182ea30c6\"},\"ManufactModel\":{\"name\":\"QSFP-100G-SR4-MM850\",\"id\":\"68d9e8531f7a0c2026a475fe\"},\"accessory_type\":\"光模块\",\"asset_status\":\"reserved\",\"asset_category\":\"CateIAssets\",\"ownership_entity\":\"st_asset\",\"reserv_borrow_expiry_date\":\"2025-12-18 15:14:55\",\"reserve_ref\":{\"name\":\"金山云/配件\",\"id\":\"6911aa88c898587dadb86978\"},\"reserved_user\":[{\"uid\":\"e10adc3949ba59abbe56e057f20f88dd\",\"name\":\"admin\",\"account\":\"admin\"}]},{\"id\":\"693d1111c74f7c0c3f420b1d\",\"classCode\":\"accessory_asset\",\"name\":\"test12131508p1\",\"sn\":\"test12131508p1\",\"Manufacturer\":{\"name\":\"新华三（H3C）\",\"id\":\"68d3cd33f43b265182ea30c6\"},\"ManufactModel\":{\"name\":\"QSFP-100G-SR4-MM850\",\"id\":\"68d9e8531f7a0c2026a475fe\"},\"accessory_type\":\"光模块\",\"asset_status\":\"reserved\",\"asset_category\":\"CateIAssets\",\"ownership_entity\":\"st_asset\",\"reserved_user\":[{\"uid\":\"e10adc3949ba59abbe56e057f20f88dd\",\"name\":\"admin\",\"account\":\"admin\"}],\"reserv_borrow_expiry_date\":\"2025-12-18 15:14:55\",\"reserve_ref\":{\"name\":\"金山云/配件\",\"id\":\"6911aa88c898587dadb86978\"}}]}" );
+        JSONObject jsonObject4 = JSON.parseObject("{\"totalRecords\":2,\"dataList\":[{\"id\":\"693d1161c74f7c0c3f420b20\",\"classCode\":\"accessory_asset\",\"name\":\"test12131508p2\",\"sn\":\"test12131508p2\",\"Manufacturer\":{\"name\":\"新华三（H3C）\",\"id\":\"68d3cd33f43b265182ea30c6\"},\"ManufactModel\":{\"name\":\"QSFP-100G-SR4-MM850\",\"id\":\"68d9e8531f7a0c2026a475fe\"},\"accessory_type\":\"光模块\",\"asset_status\":\"reserved\",\"asset_category\":\"CateIAssets\",\"ownership_entity\":\"st_asset\",\"reserv_borrow_expiry_date\":\"2025-12-18 15:14:55\",\"reserve_ref\":{\"name\":\"金山云/配件\",\"id\":\"6911aa88c898587dadb86978\"},\"reserved_user\":[{\"uid\":\"e10adc3949ba59abbe56e057f20f88dd\",\"name\":\"admin\",\"account\":\"admin\"}]},{\"id\":\"693d1111c74f7c0c3f420b1d\",\"classCode\":\"accessory_asset\",\"name\":\"test12131508p1\",\"sn\":\"test12131508p1\",\"Manufacturer\":{\"name\":\"新华三（H3C）\",\"id\":\"68d3cd33f43b265182ea30c6\"},\"ManufactModel\":{\"name\":\"QSFP-100G-SR4-MM850\",\"id\":\"68d9e8531f7a0c2026a475fe\"},\"accessory_type\":\"光模块\",\"asset_status\":\"reserved\",\"asset_category\":\"CateIAssets\",\"ownership_entity\":\"st_asset\",\"reserved_user\":[{\"uid\":\"e10adc3949ba59abbe56e057f20f88dd\",\"name\":\"admin\",\"account\":\"admin\"}],\"reserv_borrow_expiry_date\":\"2025-12-18 15:14:55\",\"reserve_ref\":{\"name\":\"金山云/配件\",\"id\":\"6911aa88c898587dadb86978\"}}]}");
         JSONArray dataArray4 = jsonObject4.getJSONArray("dataList");
         List<AccessoryAsset> assetReserveList3 = JSON.parseArray(dataArray4.toJSONString(), AccessoryAsset.class);
         Map<String, List<AccessoryAsset>> accessoryAssetMap = assetReserveList3.stream().filter(asset -> asset.getReserve_ref() != null)
