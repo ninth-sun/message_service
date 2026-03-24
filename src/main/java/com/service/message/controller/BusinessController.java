@@ -50,6 +50,10 @@ public class BusinessController {
         return CommonResponse.success();
     }
 
-
+    @GetMapping(value = "/workflow/delete/key")
+    public CommonResponse deleteKey(@RequestParam("key") String key) {
+        businessService.deleteKey(key);
+        return CommonResponse.success();
+    }
 
 }

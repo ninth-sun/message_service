@@ -404,4 +404,16 @@ public class BusinessServiceImpl implements BusinessService {
         return;
     }
 
+    @Override
+    public void deleteKey(String key) {
+        try {
+            // 删除Redis Key
+            redisTemplate.delete(key);
+            log.info("【RedisKey删除成功】Key值：{}", key);
+        } catch (Exception e) {
+            log.error("【RedisKey删除失败】Key值：{} 异常：", key, e);
+            throw new RuntimeException("RedisKey删除失败", e);
+        }
+    }
+
 }

@@ -18,4 +18,6 @@ public interface BusinessService {
     Map<String, Object> getKeyCounter(WorkFlowCounterDTO dto);
 
     void syncSapSingleTime();
+
+    void deleteKey(String key);
 }
