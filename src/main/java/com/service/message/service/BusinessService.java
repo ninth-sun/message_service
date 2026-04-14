@@ -20,4 +20,10 @@ public interface BusinessService {
     void syncSapSingleTime();
 
     void deleteKey(String key);
+
+    void timeTriggerSyncAsset(String startTime, String endTime);
+
+    Object getRedisValueByKey(String redisKey);
+
+    void syncFullAsset();
 }

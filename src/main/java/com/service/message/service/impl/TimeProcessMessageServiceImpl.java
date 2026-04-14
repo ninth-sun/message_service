@@ -1298,24 +1298,4 @@ public class TimeProcessMessageServiceImpl implements TimeProcessMessageService 
         return resultMap;
     }
 
-
-    public static void main(String[] args) {
-        JSONObject jsonObject = JSON.parseObject("{\"totalRecords\":2,\"dataList\":[{\"id\":\"693d321cc74f7c0c3f420b6c\",\"classCode\":\"assets_reserve_detail\",\"name\":\"公有云备品备件预留/配件/光模块/新华三（H3C）/QSFP-100G-SR4-MM850/#\",\"asset_purpose\":\"公有云备品备件预留\",\"asset_type\":\"配件\",\"reserved_user\":[{\"uid\":\"e10adc3949ba59abbe56e057f20f88dd\",\"name\":\"admin\",\"account\":\"admin\"}],\"accessory_type\":\"光模块\",\"Manufacturer\":{\"name\":\"新华三（H3C）\",\"id\":\"68d3cd33f43b265182ea30c6\"},\"manufacturer_model\":{\"name\":\"QSFP-100G-SR4-MM850\",\"id\":\"68d9e8531f7a0c2026a475fe\"},\"link_assets_reserve\":{\"name\":\"公有云备品备件预留/配件\",\"id\":\"6927fc878a95f837bf14e7ec\"},\"demando_count\":2},{\"id\":\"693d321cc74f7c0c3f420b6b\",\"classCode\":\"assets_reserve_detail\",\"name\":\"公有云备品备件预留/设备/安全设备/昆仑（KunLun）/G8600/910B GPU Server(8462Y+)\",\"asset_purpose\":\"公有云备品备件预留\",\"asset_type\":\"设备\",\"reserved_user\":[{\"uid\":\"e10adc3949ba59abbe56e057f20f88dd\",\"name\":\"admin\",\"account\":\"admin\"}],\"main_device_type\":\"securityDev\",\"Manufacturer\":{\"name\":\"昆仑（KunLun）\",\"id\":\"68f6ee1d5de59e40f5b91bca\"},\"manufacturer_model\":{\"name\":\"G8600\",\"id\":\"68f6ee655de59e40f5b91bcd\"},\"host_type\":\"910B GPU Server(8462Y+)\",\"link_assets_reserve\":{\"name\":\"公有云备品备件预留/设备\",\"id\":\"6927fc878a95f837bf14e7eb\"},\"demando_count\":2}]}" );
-
-
-        JSONArray dataArray = jsonObject.getJSONArray("dataList");
-
-        List<AssetsReserveDetail> assetsReserveDetailList = JSON.parseArray(dataArray.toJSONString(), AssetsReserveDetail.class);
-        // 设备的公有云预留需求明细
-        List<AssetsReserveDetail> physicalReserveDetails = assetsReserveDetailList.stream()
-                .filter(assetReserve -> "设备".equals(assetReserve.getAsset_type())).collect(Collectors.toList());
-        // 未查询到数据，终止循环
-
-
-        String s = parseConsumableTypeFromName("公有云备品备件预留/网线/超五类网线-5M/ 00.A3-WH501.SHLGS1");
-
-
-        System.out.println(1);
-    }
-
 }

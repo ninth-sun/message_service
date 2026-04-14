@@ -56,4 +56,27 @@ public class BusinessController {
         return CommonResponse.success();
     }
 
+    @GetMapping("/get/redis/value")
+    public CommonResponse getRedisValueByKey(@RequestParam("key") String key) {
+        return CommonResponse.success(businessService.getRedisValueByKey(key));
+    }
+
+    @GetMapping(value = "/time/trigger/sync/asset")
+    public CommonResponse triggerSyncAsset() {
+        businessService.timeTriggerSyncAsset(null, null);
+        return CommonResponse.success();
+    }
+
+    @GetMapping(value = "/time/trigger/sync/asset/bytime")
+    public CommonResponse triggerSyncAssetByTime(@RequestParam("startTime") String startTime, @RequestParam("endTime") String endTime) {
+        businessService.timeTriggerSyncAsset(startTime, endTime);
+        return CommonResponse.success();
+    }
+
+    @GetMapping(value = "/full/sync/asset")
+    public CommonResponse syncFullAsset() {
+        businessService.syncFullAsset();
+        return CommonResponse.success();
+    }
+
 }

@@ -39,6 +39,11 @@ public class PhysicalAsset {
     private String sn;
 
     /**
+     * 资产编号
+     */
+    private String asset_code;
+
+    /**
      * 预留借用到期日期（如：2025-11-12 17:04:08）
      */
     private String reserv_borrow_expiry_date;
@@ -57,6 +62,11 @@ public class PhysicalAsset {
      * 主设备类型（如：gpuServer-GPU服务器）
      */
     private String main_device_type;
+
+    /**
+     * U数
+     */
+    private String u_number;
 
     /**
      * 厂商信息（嵌套对象）
@@ -92,5 +102,20 @@ public class PhysicalAsset {
      * 预留变更
      */
     private String reserved_chg;
+
+    /**
+     * mc
+     */
+    private BaseObject machine_code;
+
+    /**
+     * 所在库位
+     */
+    private BaseObject wh_location;
+
+    /**
+     * 维保结束时间（如：2025-11-12 17:04:08）
+     */
+    private String maintenance_end_time;
 
 }

@@ -5,12 +5,17 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.service.message.constant.RedisKeyConstant;
 import com.service.message.dto.WorkFlowCounterDTO;
+import com.service.message.pojo.CmdbModelParams;
+import com.service.message.pojo.PhysicalAsset;
+import com.service.message.pojo.SenseCoreServer;
+import com.service.message.pojo.SenseCoreSwitch;
 import com.service.message.property.SceneDiyProperty;
 import com.service.message.property.WechatProperty;
 import com.service.message.service.BusinessService;
 import com.service.message.utils.HttpUtil;
 import com.service.message.utils.StringUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.RedisSystemException;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -21,11 +26,9 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * @Author: ninth-sun
@@ -315,10 +318,10 @@ public class BusinessServiceImpl implements BusinessService {
                 sceneDiyProperty.getUrl(), sceneDiyProperty.getApiKey());
         String requestPost = HttpUtil.doRequestPost(commitUrl, commitParam.toJSONString());
         JSONObject result = JSON.parseObject(requestPost);
-        if ("OK".equals(result)) {
-            log.info("提交工单成功");
+        if (result != null && "OK".equals(result.getString("code"))) {
+            log.info("提交工单成功！ticketId:{}，接口返回:{}", ticketId, requestPost);
         } else {
-            log.error("提交工单失败");
+            log.error("提交工单失败！ticketId:{}，接口返回:{}", ticketId, requestPost);
         }
     }
 
@@ -348,6 +351,7 @@ public class BusinessServiceImpl implements BusinessService {
     /**
      * 单次调用SAP同步接口，分布式维护update_on日期
      * 首次调用初始化：20190101，成功后自增1天，超出20260205则终止
+     *
      * @return 接口调用结果（状态、当前日期、响应信息）
      */
     @Override
@@ -355,7 +359,7 @@ public class BusinessServiceImpl implements BusinessService {
         // 1. 基础配置：日期格式、起止日期
         final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyyMMdd");
         final LocalDate START_DATE = LocalDate.of(2019, 1, 1);
-        final LocalDate END_DATE = LocalDate.of(2026, 2, 6);
+        final LocalDate END_DATE = LocalDate.of(2026, 3, 25);
         // 获取当前环境标识
         String env = sceneDiyProperty.getEnv();
 
@@ -414,6 +418,262 @@ public class BusinessServiceImpl implements BusinessService {
             log.error("【RedisKey删除失败】Key值：{} 异常：", key, e);
             throw new RuntimeException("RedisKey删除失败", e);
         }
+    }
+
+    /**
+     * 根据Redis Key 获取 Redis 中指定 Key 的 value
+     *
+     * @param redisKey
+     * @return
+     */
+    @Override
+    public Object getRedisValueByKey(String redisKey) {
+        // 直接获取Redis中指定Key的 value（核心逻辑，1次Redis调用）
+        return redisTemplate.opsForValue().get(redisKey);
+    }
+
+    @Override
+    public void syncFullAsset() {
+        List<PhysicalAsset> physicalAssets = queryModelData("physical_assets",
+                Arrays.asList("id", "classCode", "name", "sn", "asset_code", "main_device_type", "u_number",
+                        "Manufacturer", "ManufactModel", "host_type", "machine_code", "wh_location", "maintenance_end_time"),
+                PhysicalAsset.class, new ArrayList<>());
+
+        // 无更新数据
+        if (CollectionUtils.isEmpty(physicalAssets)) {
+            log.info("【资产定时同步】设备资产中无更新数据");
+            return;
+        }
+
+        SyncAsset(physicalAssets);
+    }
+
+    @Override
+    public void timeTriggerSyncAsset(String startTime, String endTime) {
+
+        log.info("【资产定时同步】===== 开始 =====");
+
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+        if (StringUtil.isEmpty(startTime) && StringUtil.isEmpty(endTime)) {
+            // 同步前一天的日志
+            LocalDate day = LocalDate.now().minusDays(1);
+            startTime = day.atStartOfDay().format(formatter);
+            endTime = day.atTime(23, 59, 59).format(formatter);
+        }
+        List<String> timeRange = Arrays.asList(startTime, endTime);
+
+        CmdbModelParams.QueryCondition assetQueryCondition = new CmdbModelParams.QueryCondition();
+        assetQueryCondition.setField("updateTime");
+        assetQueryCondition.setOperator("RANGE");
+        assetQueryCondition.setValue(timeRange);
+
+        List<CmdbModelParams.QueryCondition> assetConditions = new ArrayList<>();
+        assetConditions.add(assetQueryCondition);
+
+        List<PhysicalAsset> physicalAssets = queryModelData("physical_assets",
+                Arrays.asList("id", "classCode", "name", "sn", "asset_code", "main_device_type", "u_number",
+                        "Manufacturer", "ManufactModel", "host_type", "machine_code", "wh_location", "maintenance_end_time"),
+                PhysicalAsset.class, assetConditions);
+
+        // 无更新数据
+        if (CollectionUtils.isEmpty(physicalAssets)) {
+            log.info("【资产定时同步】设备资产中无更新数据");
+            return;
+        }
+
+        SyncAsset(physicalAssets);
+    }
+
+    /**
+     * 同步资产
+     *
+     * @param physicalAssets
+     */
+    public void SyncAsset(List<PhysicalAsset> physicalAssets) {
+
+        log.info("【资产定时同步】===== 开始执行资产自动同步任务 =====");
+
+        Map<String, PhysicalAsset> physicalAssetMap = physicalAssets
+                .stream()
+                // 核心：toMap 直接实现 分组+去重+取第一个
+                .collect(Collectors.toMap(
+                        PhysicalAsset::getSn,
+                        asset -> asset,
+                        (first, second) -> first
+                ));
+
+        log.info("【资产定时同步】物理资产按SN去重完成，有效资产数：{}", physicalAssetMap.size());
+
+        CmdbModelParams.QueryCondition serverQueryCondition = new CmdbModelParams.QueryCondition();
+        serverQueryCondition.setField("name");
+        serverQueryCondition.setOperator("IN");
+        serverQueryCondition.setValue(physicalAssetMap.keySet());
+
+        List<CmdbModelParams.QueryCondition> serverConditions = new ArrayList<>();
+        serverConditions.add(serverQueryCondition);
+
+        List<SenseCoreServer> senseCoreServers = queryModelData("SenseCore_Server",
+                Arrays.asList("id", "name"), SenseCoreServer.class, serverConditions);
+
+        List<SenseCoreSwitch> senseCoreSwitches = queryModelData("SenseCore_Switch",
+                Arrays.asList("id", "name"), SenseCoreSwitch.class, serverConditions);
+
+        // 无可匹配数据
+        if (CollectionUtils.isEmpty(senseCoreServers) && CollectionUtils.isEmpty(senseCoreSwitches)) {
+            log.info("【资产定时同步】未查询到匹配的服务器和交换机数据，同步任务结束");
+            return;
+        }
+
+        log.info("【资产定时同步】查询到匹配服务器数量：{}，交换机数量：{}", CollectionUtils.size(senseCoreServers), CollectionUtils.size(senseCoreSwitches));
+
+        // 待更新数据(SenseCore服务器/SenseCore交换机)
+        List<Map<String, Object>> needUpdateList = new ArrayList<>();
+
+        for (SenseCoreServer senseCoreServer : senseCoreServers) {
+            PhysicalAsset physicalAsset = physicalAssetMap.get(senseCoreServer.getName());
+            if (physicalAsset == null) {
+                log.info("【资产定时同步】服务器[name={}]未匹配到对应物理资产，跳过更新", senseCoreServer.getName());
+                continue;
+            }
+            Map<String, Object> diyMap = new HashMap<>();
+            diyMap.put("id", senseCoreServer.getId());
+            diyMap.put("classCode", "SenseCore_Server");
+            diyMap.put("asset_code", physicalAsset.getAsset_code());
+            diyMap.put("main_device_type", physicalAsset.getMain_device_type());
+            diyMap.put("u_number", physicalAsset.getU_number());
+            diyMap.put("host_type", physicalAsset.getHost_type());
+            diyMap.put("Manufacturer", physicalAsset.getManufacturer());
+            diyMap.put("ManufactModel", physicalAsset.getManufactModel());
+            diyMap.put("machine_code", physicalAsset.getMachine_code());
+            diyMap.put("wh_location", physicalAsset.getWh_location());
+            diyMap.put("maintenance_end_time", physicalAsset.getMaintenance_end_time());
+            needUpdateList.add(diyMap);
+        }
+
+        for (SenseCoreSwitch senseCoreSwitch : senseCoreSwitches) {
+            PhysicalAsset physicalAsset = physicalAssetMap.get(senseCoreSwitch.getName());
+            if (physicalAsset == null) {
+                log.warn("【资产定时同步】交换机[name={}]未匹配到对应物理资产，跳过更新", senseCoreSwitch.getName());
+                continue;
+            }
+            Map<String, Object> diyMap = new HashMap<>();
+            diyMap.put("id", senseCoreSwitch.getId());
+            diyMap.put("classCode", "SenseCore_Switch");
+            diyMap.put("asset_code", physicalAsset.getAsset_code());
+            diyMap.put("main_device_type", physicalAsset.getMain_device_type());
+            diyMap.put("u_number", physicalAsset.getU_number());
+            diyMap.put("host_type", physicalAsset.getHost_type());
+            diyMap.put("Manufacturer", physicalAsset.getManufacturer());
+            diyMap.put("ManufactModel", physicalAsset.getManufactModel());
+            diyMap.put("machine_code", physicalAsset.getMachine_code());
+            diyMap.put("wh_location", physicalAsset.getWh_location());
+            diyMap.put("maintenance_end_time", physicalAsset.getMaintenance_end_time());
+            needUpdateList.add(diyMap);
+        }
+
+        log.info("【资产定时同步】构建完成,SenseCore服务器与SenseCore交换机待更新数据总量：{}", needUpdateList.size());
+
+        // 分批更新数据
+        if (CollectionUtils.isNotEmpty(needUpdateList)) {
+            String apiUrl = String.format("%s/store/openapi/v2/resources/batch_save?apikey=%s&source=sap",
+                    sceneDiyProperty.getUrl(), sceneDiyProperty.getApiKey());
+            int totalSize = needUpdateList.size();
+            log.info("【资产定时同步】开始分批推送更新，总数据量：{}，每批次500条", totalSize);
+
+            for (int i = 0; i < totalSize; i += 500) {
+                int endIndex = Math.min(i + 500, totalSize);
+                List<Map<String, Object>> batchData = needUpdateList.subList(i, endIndex);
+                int currentBatchSize = batchData.size();
+                int batchNum = (i / 500) + 1;
+                try {
+                    HttpUtil.doRequestPost(apiUrl, JSON.toJSONString(batchData));
+                    log.info("【资产定时同步】第{}批数据推送成功，批次数量：{}", batchNum, currentBatchSize);
+                } catch (Exception e) {
+                    log.error("【资产定时同步】第{}批数据推送失败，批次数量：{}", batchNum, currentBatchSize, e);
+                }
+            }
+        }
+        log.info("【资产定时同步】===== 所有数据推送完成，同步任务结束 =====");
+    }
+
+    /**
+     * 查询模型数据
+     *
+     * @param classCode
+     * @param requiredFields
+     * @param clazz
+     * @param addConditions
+     * @param <T>
+     * @return
+     */
+    private <T> List<T> queryModelData(String classCode, List<String> requiredFields, Class<T> clazz, List<CmdbModelParams.QueryCondition> addConditions) {
+        // 初始化结果集
+        List<T> totalDataList = new ArrayList<>();
+
+        // 1. 构建查询条件
+        CmdbModelParams.QueryCondition queryCondition = new CmdbModelParams.QueryCondition();
+        queryCondition.setField("classCode");
+        queryCondition.setValue(classCode);
+        List<CmdbModelParams.QueryCondition> conditions = new ArrayList<>();
+        conditions.add(queryCondition);
+        // 额外的查询条件
+        if (CollectionUtils.isNotEmpty(addConditions)) conditions.addAll(addConditions);
+        // 2. 生成CMDB查询参数
+        CmdbModelParams cmdbModelParams = generateCmdbModelParams(conditions, requiredFields);
+
+        // 3. 分页循环查询
+        int page = 1;
+        while (true) {
+            String requestPost = HttpUtil.doRequestPost(
+                    String.format("%s/store/openapi/v2/resources/query?apikey=%s", sceneDiyProperty.getUrl(), sceneDiyProperty.getApiKey()),
+                    JSON.toJSONString(cmdbModelParams));
+
+            // 获取数据为空，终止循环
+            if (StringUtil.isEmpty(requestPost)) break;
+
+            JSONObject jsonObject = JSON.parseObject(requestPost);
+            // 获取数据对象为空，终止循环
+            if (Objects.isNull(jsonObject)) break;
+
+            Integer totalRecords = jsonObject.getInteger("totalRecords");
+            JSONArray dataArray = jsonObject.getJSONArray("dataList");
+            // 未查询到数据，终止循环
+            if (totalRecords == null || totalRecords <= 0) break;
+            if (dataArray == null || dataArray.isEmpty()) break;
+
+            // 将数据添加到总集中（直接用JSONArray解析，避免转义问题）
+            List<T> currentPageData = JSON.parseArray(dataArray.toJSONString(), clazz);
+            if (currentPageData != null && !currentPageData.isEmpty()) {
+                totalDataList.addAll(currentPageData);
+            }
+
+            // 已获取所有数据，终止循环
+            if (page * 1000 >= totalRecords) break;
+            // 更新页码
+            cmdbModelParams.setPageNum(page);
+            // 页码+1（因为cmdb的页码是从0开始，所以最后+1）
+            page++;
+        }
+
+        return totalDataList;
+    }
+
+    /**
+     * 生成cmdb模型查询参数
+     *
+     * @param conditions
+     * @param requiredFields
+     * @return
+     */
+    public CmdbModelParams generateCmdbModelParams(List<CmdbModelParams.QueryCondition> conditions, List<String> requiredFields) {
+        // 初始化查询参数
+        CmdbModelParams cmdbModelParams = new CmdbModelParams();
+        // 添加查询条件
+        cmdbModelParams.setConditions(conditions);
+        // 添加返回参数
+        cmdbModelParams.setRequiredFields(requiredFields);
+        return cmdbModelParams;
     }
 
 }
