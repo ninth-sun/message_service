@@ -118,4 +118,19 @@ public class PhysicalAsset {
      */
     private String maintenance_end_time;
 
+    /**
+     * 数据中心
+     */
+    private BaseObject datacenter_name;
+
+    /**
+     * 机柜号
+     */
+    private BaseObject rack;
+
+    /**
+     * U位
+     */
+    private String u_position_sc2;
+
 }

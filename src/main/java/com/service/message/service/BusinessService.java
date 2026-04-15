@@ -26,4 +26,8 @@ public interface BusinessService {
     Object getRedisValueByKey(String redisKey);
 
     void syncFullAsset();
+
+    void timeTriggerSyncSenseCoreAsset(String startTime, String endTime);
+
+    void syncFullSenseCoreAsset();
 }

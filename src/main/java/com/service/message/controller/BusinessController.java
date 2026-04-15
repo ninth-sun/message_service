@@ -79,4 +79,22 @@ public class BusinessController {
         return CommonResponse.success();
     }
 
+    @GetMapping(value = "/time/trigger/sync/sense/asset")
+    public CommonResponse triggerSyncSenseCoreAsset() {
+        businessService.timeTriggerSyncSenseCoreAsset(null, null);
+        return CommonResponse.success();
+    }
+
+    @GetMapping(value = "/time/trigger/sync/sense/asset/bytime")
+    public CommonResponse triggerSyncSenseCoreAssetByTime(@RequestParam("startTime") String startTime, @RequestParam("endTime") String endTime) {
+        businessService.timeTriggerSyncSenseCoreAsset(startTime, endTime);
+        return CommonResponse.success();
+    }
+
+    @GetMapping(value = "/full/sync/sense/asset")
+    public CommonResponse syncFullSenseCoreAsset() {
+        businessService.syncFullSenseCoreAsset();
+        return CommonResponse.success();
+    }
+
 }

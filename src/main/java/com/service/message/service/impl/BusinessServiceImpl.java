@@ -597,6 +597,178 @@ public class BusinessServiceImpl implements BusinessService {
         log.info("【资产定时同步】===== 所有数据推送完成，同步任务结束 =====");
     }
 
+    @Override
+    public void syncFullSenseCoreAsset() {
+
+        List<SenseCoreServer> senseCoreServers = queryModelData("SenseCore_Server",
+                Arrays.asList("id", "classCode", "name", "datacenter_name", "rack", "u_position_sc2"), SenseCoreServer.class, new ArrayList<>());
+
+        List<SenseCoreSwitch> senseCoreSwitches = queryModelData("SenseCore_Switch",
+                Arrays.asList("id", "classCode", "name", "datacenter_name", "rack", "u_position_sc2"), SenseCoreSwitch.class, new ArrayList<>());
+
+        // 无更新数据
+        if (CollectionUtils.isEmpty(senseCoreServers) && CollectionUtils.isEmpty(senseCoreSwitches)) {
+            log.info("【SenseCore资产定时同步】SenseCore服务器与SenseCore交换机中无更新数据");
+            return;
+        }
+
+        syncSenseCoreAsset(senseCoreSwitches, senseCoreServers);
+    }
+
+    @Override
+    public void timeTriggerSyncSenseCoreAsset(String startTime, String endTime) {
+
+        log.info("【SenseCore资产定时同步】===== 开始 =====");
+
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+        if (StringUtil.isEmpty(startTime) && StringUtil.isEmpty(endTime)) {
+            // 同步前一天的日志
+            LocalDate day = LocalDate.now().minusDays(1);
+            startTime = day.atStartOfDay().format(formatter);
+            endTime = day.atTime(23, 59, 59).format(formatter);
+        }
+        List<String> timeRange = Arrays.asList(startTime, endTime);
+
+        CmdbModelParams.QueryCondition senseCoreQueryCondition = new CmdbModelParams.QueryCondition();
+        senseCoreQueryCondition.setField("updateTime");
+        senseCoreQueryCondition.setOperator("RANGE");
+        senseCoreQueryCondition.setValue(timeRange);
+
+        List<CmdbModelParams.QueryCondition> senseCoreConditions = new ArrayList<>();
+        senseCoreConditions.add(senseCoreQueryCondition);
+
+        List<SenseCoreServer> senseCoreServers = queryModelData("SenseCore_Server",
+                Arrays.asList("id", "classCode", "name", "datacenter_name", "rack", "u_position_sc2"),
+                SenseCoreServer.class, senseCoreConditions);
+
+        List<SenseCoreSwitch> senseCoreSwitches = queryModelData("SenseCore_Switch",
+                Arrays.asList("id", "classCode", "name", "datacenter_name", "rack", "u_position_sc2"),
+                SenseCoreSwitch.class, senseCoreConditions);
+
+        // 无更新数据
+        if (CollectionUtils.isEmpty(senseCoreServers) && CollectionUtils.isEmpty(senseCoreSwitches)) {
+            log.info("【SenseCore资产定时同步】SenseCore服务器与SenseCore交换机中无更新数据");
+            return;
+        }
+
+        syncSenseCoreAsset(senseCoreSwitches, senseCoreServers);
+    }
+
+    public void syncSenseCoreAsset(List<SenseCoreSwitch> senseCoreSwitches, List<SenseCoreServer> senseCoreServers) {
+
+        log.info("【SenseCore资产定时同步】===== 开始执行资产自动同步任务 =====");
+
+        Map<String, SenseCoreSwitch> senseCoreSwitchMap = senseCoreSwitches
+                .stream()
+                // 核心：toMap 直接实现 分组+去重+取第一个
+                .collect(Collectors.toMap(
+                        SenseCoreSwitch::getName,
+                        coreSwitch -> coreSwitch,
+                        (first, second) -> first
+                ));
+        log.info("【SenseCore资产定时同步】SenseCoreSwitch按SN去重完成，有效数：{}", senseCoreSwitchMap.size());
+
+        Map<String, SenseCoreServer> senseCoreServerMap = senseCoreServers
+                .stream()
+                // 核心：toMap 直接实现 分组+去重+取第一个
+                .collect(Collectors.toMap(
+                        SenseCoreServer::getName,
+                        coreServer -> coreServer,
+                        (first, second) -> first
+                ));
+        log.info("【SenseCore资产定时同步】SenseCoreServer按SN去重完成，有效数：{}", senseCoreServerMap.size());
+
+        Set<String> senseCoreNames = new HashSet<>();
+        senseCoreNames.addAll(senseCoreSwitchMap.keySet());
+        senseCoreNames.addAll(senseCoreServerMap.keySet());
+
+        CmdbModelParams.QueryCondition assetQueryCondition = new CmdbModelParams.QueryCondition();
+        assetQueryCondition.setField("sn");
+        assetQueryCondition.setOperator("IN");
+        assetQueryCondition.setValue(senseCoreNames);
+
+        List<CmdbModelParams.QueryCondition> assetConditions = new ArrayList<>();
+        assetConditions.add(assetQueryCondition);
+
+        List<PhysicalAsset> physicalAssets = queryModelData("physical_assets",
+                Arrays.asList("id", "sn"), PhysicalAsset.class, assetConditions);
+
+        // 无可匹配数据
+        if (CollectionUtils.isEmpty(physicalAssets)) {
+            log.info("【SenseCore资产定时同步】未查询到匹配的设备资产数据，同步任务结束");
+            return;
+        }
+
+        log.info("【SenseCore资产定时同步】查询到设备资产数量：{}", CollectionUtils.size(physicalAssets));
+
+        Map<String, PhysicalAsset> physicalAssetMap = physicalAssets
+                .stream()
+                // 核心：toMap 直接实现 分组+去重+取第一个
+                .collect(Collectors.toMap(
+                        PhysicalAsset::getSn,
+                        asset -> asset,
+                        (first, second) -> first
+                ));
+
+        // 待更新数据(SenseCore服务器/SenseCore交换机)
+        List<Map<String, Object>> needUpdateList = new ArrayList<>();
+
+        for (SenseCoreServer senseCoreServer : senseCoreServers) {
+            PhysicalAsset physicalAsset = physicalAssetMap.get(senseCoreServer.getName());
+            if (physicalAsset == null) {
+                log.info("【SenseCore资产定时同步】服务器[name={}]未匹配到对应物理资产，跳过更新", senseCoreServer.getName());
+                continue;
+            }
+            Map<String, Object> diyMap = new HashMap<>();
+            diyMap.put("id", physicalAsset.getId());
+            diyMap.put("classCode", "physical_assets");
+            diyMap.put("datacenter_name", senseCoreServer.getDatacenter_name());
+            diyMap.put("rack", senseCoreServer.getRack());
+            diyMap.put("u_position_sc2", senseCoreServer.getU_position_sc2());
+            needUpdateList.add(diyMap);
+        }
+
+        for (SenseCoreSwitch senseCoreSwitch : senseCoreSwitches) {
+            PhysicalAsset physicalAsset = physicalAssetMap.get(senseCoreSwitch.getName());
+            if (physicalAsset == null) {
+                log.warn("【SenseCore资产定时同步】交换机[name={}]未匹配到对应物理资产，跳过更新", senseCoreSwitch.getName());
+                continue;
+            }
+            Map<String, Object> diyMap = new HashMap<>();
+            diyMap.put("id", physicalAsset.getId());
+            diyMap.put("classCode", "physical_assets");
+            diyMap.put("datacenter_name", senseCoreSwitch.getDatacenter_name());
+            diyMap.put("rack", senseCoreSwitch.getRack());
+            diyMap.put("u_position_sc2", senseCoreSwitch.getU_position_sc2());
+            needUpdateList.add(diyMap);
+        }
+
+        log.info("【SenseCore资产定时同步】构建完成,设备资产待更新数据总量：{}", needUpdateList.size());
+
+        // 分批更新数据
+        if (CollectionUtils.isNotEmpty(needUpdateList)) {
+            String apiUrl = String.format("%s/store/openapi/v2/resources/batch_save?apikey=%s&source=sap",
+                    sceneDiyProperty.getUrl(), sceneDiyProperty.getApiKey());
+            int totalSize = needUpdateList.size();
+            log.info("【SenseCore资产定时同步】开始分批推送更新，总数据量：{}，每批次500条", totalSize);
+
+            for (int i = 0; i < totalSize; i += 500) {
+                int endIndex = Math.min(i + 500, totalSize);
+                List<Map<String, Object>> batchData = needUpdateList.subList(i, endIndex);
+                int currentBatchSize = batchData.size();
+                int batchNum = (i / 500) + 1;
+                try {
+                    HttpUtil.doRequestPost(apiUrl, JSON.toJSONString(batchData));
+                    log.info("【SenseCore资产定时同步】第{}批数据推送成功，批次数量：{}", batchNum, currentBatchSize);
+                } catch (Exception e) {
+                    log.error("【SenseCore资产定时同步】第{}批数据推送失败，批次数量：{}", batchNum, currentBatchSize, e);
+                }
+            }
+        }
+        log.info("【SenseCore资产定时同步】===== 所有数据推送完成，同步任务结束 =====");
+    }
+
     /**
      * 查询模型数据
      *
